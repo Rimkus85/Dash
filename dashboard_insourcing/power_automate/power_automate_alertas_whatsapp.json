@@ -1,0 +1,131 @@
+{
+  "name": "Dashboard Insourcing - Alertas WhatsApp",
+  "description": "Fluxo que envia alertas críticos via WhatsApp Business API quando KPIs ultrapassam limites",
+  "trigger": {
+    "type": "PowerBI.DataAlertTriggered",
+    "inputs": {
+      "workspace": "SEU_WORKSPACE_ID",
+      "dataset": "Dashboard_KPIs_Insourcing",
+      "alert": "Alerta_KPIs_Criticos"
+    }
+  },
+  "actions": [
+    {
+      "name": "Obter_Detalhes_Alerta",
+      "type": "Compose",
+      "inputs": {
+        "kpi": "@triggerBody()?['TileName']",
+        "valor": "@triggerBody()?['Value']",
+        "limite": "@triggerBody()?['ThresholdValue']",
+        "timestamp": "@triggerBody()?['Timestamp']"
+      },
+      "description": "Extrai informações do alerta disparado pelo Power BI"
+    },
+    {
+      "name": "Identificar_Gerente_Responsavel",
+      "type": "PowerBI.GetDataset",
+      "inputs": {
+        "workspace": "SEU_WORKSPACE_ID",
+        "dataset": "Dashboard_KPIs_Insourcing",
+        "table": "dim_gerentes",
+        "filter": "Area eq 'Operações'"
+      },
+      "description": "Identifica o gerente responsável pela área afetada"
+    },
+    {
+      "name": "Criar_Mensagem_WhatsApp",
+      "type": "Compose",
+      "inputs": "@concat('🚨 *ALERTA CRÍTICO - Dashboard Insourcing*\\n\\n', '📊 *KPI:* ', outputs('Obter_Detalhes_Alerta')?['kpi'], '\\n', '📈 *Valor Atual:* ', outputs('Obter_Detalhes_Alerta')?['valor'], '\\n', '⚠️ *Limite:* ', outputs('Obter_Detalhes_Alerta')?['limite'], '\\n', '🕐 *Horário:* ', formatDateTime(outputs('Obter_Detalhes_Alerta')?['timestamp'], 'dd/MM/yyyy HH:mm'), '\\n\\n', '👉 Acesse o dashboard para mais detalhes:\\n', 'https://app.powerbi.com/groups/SEU_WORKSPACE/reports/SEU_REPORT_ID')",
+      "description": "Formata mensagem para WhatsApp com emojis e formatação"
+    },
+    {
+      "name": "Enviar_WhatsApp_API",
+      "type": "Http",
+      "inputs": {
+        "method": "POST",
+        "uri": "https://graph.facebook.com/v18.0/SEU_PHONE_NUMBER_ID/messages",
+        "headers": {
+          "Authorization": "Bearer SEU_WHATSAPP_TOKEN",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "messaging_product": "whatsapp",
+          "recipient_type": "individual",
+          "to": "@outputs('Identificar_Gerente_Responsavel')?['body/value'][0]?['Telefone']",
+          "type": "text",
+          "text": {
+            "preview_url": true,
+            "body": "@outputs('Criar_Mensagem_WhatsApp')"
+          }
+        }
+      },
+      "description": "Envia mensagem via WhatsApp Business API"
+    },
+    {
+      "name": "Registrar_Envio_WhatsApp",
+      "type": "SharePoint.CreateItem",
+      "inputs": {
+        "site": "SEU_SITE_SHAREPOINT",
+        "list": "Historico_Alertas_WhatsApp",
+        "item": {
+          "Title": "Alerta - @{outputs('Obter_Detalhes_Alerta')?['kpi']}",
+          "Data_Envio": "@utcNow()",
+          "KPI": "@outputs('Obter_Detalhes_Alerta')?['kpi']",
+          "Valor": "@outputs('Obter_Detalhes_Alerta')?['valor']",
+          "Destinatario": "@outputs('Identificar_Gerente_Responsavel')?['body/value'][0]?['Gerente']",
+          "Status": "Enviado"
+        }
+      },
+      "description": "Registra envio para auditoria"
+    }
+  ],
+  "configuracao": {
+    "descricao": "CONFIGURAÇÃO NECESSÁRIA - WhatsApp Business API",
+    "requisitos": [
+      "Conta WhatsApp Business verificada",
+      "Acesso à Meta Business Suite",
+      "Phone Number ID configurado",
+      "Access Token gerado"
+    ],
+    "passos": [
+      "1. Configure uma conta WhatsApp Business (https://business.whatsapp.com/)",
+      "2. Obtenha credenciais da API no Meta for Developers (https://developers.facebook.com/)",
+      "3. Substitua 'SEU_PHONE_NUMBER_ID' pelo Phone Number ID da sua conta",
+      "4. Substitua 'SEU_WHATSAPP_TOKEN' pelo Access Token gerado",
+      "5. Substitua 'SEU_WORKSPACE_ID' e 'SEU_REPORT_ID' pelos IDs do Power BI",
+      "6. Configure os números de telefone dos gerentes na tabela dim_gerentes (formato: +5511999999999)",
+      "7. Crie alertas de dados no Power BI para disparar este fluxo",
+      "8. Teste com um número de telefone de teste antes de ativar"
+    ],
+    "alternativa_sem_api": {
+      "descricao": "Se não tiver acesso à WhatsApp Business API, use uma das alternativas:",
+      "opcoes": [
+        "1. Power Automate Mobile: Envia notificação push para o app móvel do Power Automate",
+        "2. Twilio: Serviço de SMS como alternativa ao WhatsApp",
+        "3. Telegram Bot: Mais fácil de configurar que WhatsApp, sem necessidade de aprovação"
+      ]
+    },
+    "custos": {
+      "whatsapp_api": "Cobrado por mensagem enviada (varia por país)",
+      "twilio_sms": "Aproximadamente $0.01 USD por SMS",
+      "telegram": "Gratuito"
+    }
+  },
+  "exemplo_alternativa_telegram": {
+    "name": "Enviar_Telegram_Bot",
+    "type": "Http",
+    "inputs": {
+      "method": "POST",
+      "uri": "https://api.telegram.org/botSEU_BOT_TOKEN/sendMessage",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "chat_id": "SEU_CHAT_ID",
+        "text": "@outputs('Criar_Mensagem_WhatsApp')",
+        "parse_mode": "Markdown"
+      }
+    },
+    "description": "Alternativa gratuita usando Telegram Bot"
+  }
+}

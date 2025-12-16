@@ -1,0 +1,182 @@
+{
+  "name": "Dashboard Insourcing - Alertas Teams",
+  "description": "Fluxo que monitora KPIs críticos no Power BI e envia alertas no Teams quando limites são ultrapassados",
+  "trigger": {
+    "type": "Recurrence",
+    "recurrence": {
+      "frequency": "Hour",
+      "interval": 1,
+      "schedule": {
+        "hours": [8, 10, 12, 14, 16, 18],
+        "weekDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+      }
+    }
+  },
+  "actions": [
+    {
+      "name": "Obter_Dados_Power_BI",
+      "type": "PowerBI.GetDataset",
+      "inputs": {
+        "workspace": "SEU_WORKSPACE_ID",
+        "dataset": "Dashboard_KPIs_Insourcing",
+        "table": "fato_metricas_diarias"
+      },
+      "description": "Conecta ao dataset do Power BI e obtém os dados mais recentes"
+    },
+    {
+      "name": "Filtrar_Dados_Hoje",
+      "type": "Filter",
+      "inputs": {
+        "from": "@outputs('Obter_Dados_Power_BI')?['body/value']",
+        "where": "@equals(formatDateTime(item()?['Data'], 'yyyy-MM-dd'), formatDateTime(utcNow(), 'yyyy-MM-dd'))"
+      },
+      "description": "Filtra apenas os dados do dia atual"
+    },
+    {
+      "name": "Obter_Metas",
+      "type": "PowerBI.GetDataset",
+      "inputs": {
+        "workspace": "SEU_WORKSPACE_ID",
+        "dataset": "Dashboard_KPIs_Insourcing",
+        "table": "metas_kpis"
+      },
+      "description": "Obtém as metas configuradas para comparação"
+    },
+    {
+      "name": "Verificar_KPIs_Criticos",
+      "type": "Compose",
+      "inputs": {
+        "alertas": "@variables('alertas_criticos')"
+      },
+      "description": "Compara KPIs atuais com limites críticos e cria lista de alertas"
+    },
+    {
+      "name": "Condicao_Tem_Alertas",
+      "type": "Condition",
+      "expression": {
+        "and": [
+          {
+            "greater": [
+              "@length(outputs('Verificar_KPIs_Criticos')?['alertas'])",
+              0
+            ]
+          }
+        ]
+      },
+      "actions": {
+        "if_true": [
+          {
+            "name": "Criar_Mensagem_Adaptativa",
+            "type": "Compose",
+            "inputs": {
+              "type": "AdaptiveCard",
+              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+              "version": "1.4",
+              "body": [
+                {
+                  "type": "Container",
+                  "style": "attention",
+                  "items": [
+                    {
+                      "type": "TextBlock",
+                      "text": "⚠️ ALERTAS CRÍTICOS - Dashboard Insourcing",
+                      "weight": "Bolder",
+                      "size": "Large",
+                      "color": "Attention"
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "Os seguintes KPIs ultrapassaram os limites críticos:",
+                      "wrap": true,
+                      "spacing": "Small"
+                    }
+                  ]
+                },
+                {
+                  "type": "FactSet",
+                  "facts": "@outputs('Verificar_KPIs_Criticos')?['alertas']"
+                },
+                {
+                  "type": "ActionSet",
+                  "actions": [
+                    {
+                      "type": "Action.OpenUrl",
+                      "title": "Abrir Dashboard",
+                      "url": "https://app.powerbi.com/groups/SEU_WORKSPACE/reports/SEU_REPORT_ID"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "Postar_no_Teams",
+            "type": "MicrosoftTeams.PostMessageV3",
+            "inputs": {
+              "groupId": "SEU_TEAM_ID",
+              "channelId": "SEU_CHANNEL_ID",
+              "message": {
+                "body": {
+                  "contentType": "application/vnd.microsoft.card.adaptive",
+                  "content": "@outputs('Criar_Mensagem_Adaptativa')"
+                }
+              },
+              "importance": "High"
+            }
+          },
+          {
+            "name": "Mencionar_Responsaveis",
+            "type": "MicrosoftTeams.PostMessageV3",
+            "inputs": {
+              "groupId": "SEU_TEAM_ID",
+              "channelId": "SEU_CHANNEL_ID",
+              "message": {
+                "body": {
+                  "content": "<at>Gerente Responsável</at> - Por favor, verifique os alertas acima."
+                },
+                "mentions": [
+                  {
+                    "id": 0,
+                    "mentionText": "Gerente Responsável",
+                    "mentioned": {
+                      "user": {
+                        "displayName": "Nome do Gerente",
+                        "email": "gerente@empresa.com.br"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "variables": [
+    {
+      "name": "alertas_criticos",
+      "type": "Array",
+      "value": []
+    }
+  ],
+  "configuracao": {
+    "descricao": "CONFIGURAÇÃO NECESSÁRIA",
+    "passos": [
+      "1. Substitua 'SEU_WORKSPACE_ID' pelo ID do seu workspace do Power BI",
+      "2. Substitua 'SEU_REPORT_ID' pelo ID do relatório publicado",
+      "3. Substitua 'SEU_TEAM_ID' pelo ID do time no Teams",
+      "4. Substitua 'SEU_CHANNEL_ID' pelo ID do canal onde os alertas serão postados",
+      "5. Configure os e-mails dos gerentes responsáveis na seção 'Mencionar_Responsaveis'",
+      "6. Ajuste os horários de verificação conforme necessário (atualmente: 8h, 10h, 12h, 14h, 16h, 18h)"
+    ],
+    "kpis_monitorados": [
+      "Ocupação % (crítico se > 97%)",
+      "Absenteísmo % (crítico se > 10%)",
+      "Falha Operacional % (crítico se > 4%)",
+      "Rechamadas 7d % (crítico se > 5%)",
+      "Cancelamento FTTH % (crítico se > 10%)",
+      "Margem Operacional % (crítico se < 20%)"
+    ]
+  }
+}

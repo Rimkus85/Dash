@@ -1,0 +1,140 @@
+{
+  "name": "Dashboard Insourcing - Resumo Semanal Email",
+  "description": "Fluxo que envia resumo executivo semanal por e-mail com snapshot do dashboard e principais KPIs",
+  "trigger": {
+    "type": "Recurrence",
+    "recurrence": {
+      "frequency": "Week",
+      "interval": 1,
+      "schedule": {
+        "hours": [8],
+        "minutes": [0],
+        "weekDays": ["Monday"]
+      },
+      "timeZone": "E. South America Standard Time"
+    }
+  },
+  "actions": [
+    {
+      "name": "Definir_Periodo",
+      "type": "Compose",
+      "inputs": {
+        "data_inicio": "@addDays(utcNow(), -7)",
+        "data_fim": "@utcNow()",
+        "semana": "@formatDateTime(utcNow(), 'W')",
+        "ano": "@formatDateTime(utcNow(), 'yyyy')"
+      },
+      "description": "Define o período da última semana para análise"
+    },
+    {
+      "name": "Obter_Dados_Semana",
+      "type": "PowerBI.GetDataset",
+      "inputs": {
+        "workspace": "SEU_WORKSPACE_ID",
+        "dataset": "Dashboard_KPIs_Insourcing",
+        "table": "fato_metricas_diarias",
+        "filter": "Data ge @{outputs('Definir_Periodo')?['data_inicio']} and Data le @{outputs('Definir_Periodo')?['data_fim']}"
+      },
+      "description": "Obtém dados da última semana"
+    },
+    {
+      "name": "Calcular_Metricas_Resumo",
+      "type": "Compose",
+      "inputs": {
+        "qualidade": {
+          "nps": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'NPS')",
+          "rechamadas": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'Rechamadas_7d_Pct')",
+          "falha_operacional": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'Falha_Operacional_Pct')",
+          "sla": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'SLA_Atendimento_Pct')"
+        },
+        "producao": {
+          "tma": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'TMA_Seg')",
+          "ocupacao": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'Ocupacao_Pct')",
+          "absenteismo": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'Absenteismo_Pct')"
+        },
+        "negocios": {
+          "conversao": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'Conversao_Pct')",
+          "instalacoes": "@sum(outputs('Obter_Dados_Semana')?['body/value'], 'Instalacoes_Total')"
+        },
+        "financeiro": {
+          "receita": "@sum(outputs('Obter_Dados_Semana')?['body/value'], 'Receita_Total')",
+          "margem": "@average(outputs('Obter_Dados_Semana')?['body/value'], 'Margem_Operacional_Pct')"
+        }
+      },
+      "description": "Calcula médias e totais dos principais KPIs"
+    },
+    {
+      "name": "Exportar_Snapshot_Dashboard",
+      "type": "PowerBI.ExportReport",
+      "inputs": {
+        "workspace": "SEU_WORKSPACE_ID",
+        "report": "SEU_REPORT_ID",
+        "page": "Resumo Executivo",
+        "format": "PNG",
+        "filters": {
+          "Periodo": "Última Semana"
+        }
+      },
+      "description": "Exporta imagem da página de Resumo Executivo"
+    },
+    {
+      "name": "Criar_HTML_Email",
+      "type": "Compose",
+      "inputs": "@concat('<html><head><style>body{font-family:Arial,sans-serif;color:#333;} .header{background-color:#1e3a5f;color:white;padding:20px;text-align:center;} .kpi-card{display:inline-block;width:200px;margin:10px;padding:15px;border:1px solid #ddd;border-radius:5px;text-align:center;} .kpi-value{font-size:32px;font-weight:bold;color:#0078d4;} .kpi-label{font-size:14px;color:#666;} .positive{color:#28a745;} .negative{color:#dc3545;} .section{margin:20px;} table{border-collapse:collapse;width:100%;margin:20px 0;} th,td{border:1px solid #ddd;padding:12px;text-align:left;} th{background-color:#f5f5f5;}</style></head><body><div class=\"header\"><h1>📊 Resumo Semanal - Dashboard Insourcing</h1><p>Semana ', outputs('Definir_Periodo')?['semana'], '/', outputs('Definir_Periodo')?['ano'], '</p></div><div class=\"section\"><h2>Visão Consolidada</h2><img src=\"cid:dashboard_snapshot\" style=\"max-width:100%;height:auto;\"/></div><div class=\"section\"><h2>Principais Indicadores</h2><div class=\"kpi-card\"><div class=\"kpi-value\">', formatNumber(outputs('Calcular_Metricas_Resumo')?['qualidade']?['nps'], 'N0'), '</div><div class=\"kpi-label\">NPS</div></div><div class=\"kpi-card\"><div class=\"kpi-value\">', formatNumber(outputs('Calcular_Metricas_Resumo')?['producao']?['ocupacao'], 'N1'), '%</div><div class=\"kpi-label\">Ocupação</div></div><div class=\"kpi-card\"><div class=\"kpi-value\">', formatNumber(outputs('Calcular_Metricas_Resumo')?['negocios']?['conversao'], 'N1'), '%</div><div class=\"kpi-label\">Conversão</div></div><div class=\"kpi-card\"><div class=\"kpi-value\">', formatNumber(outputs('Calcular_Metricas_Resumo')?['financeiro']?['margem'], 'N1'), '%</div><div class=\"kpi-label\">Margem</div></div></div><div class=\"section\"><h2>Detalhamento por Eixo</h2><table><tr><th>Eixo</th><th>KPI</th><th>Valor</th><th>Meta</th><th>Status</th></tr><tr><td rowspan=\"4\">Qualidade</td><td>NPS</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['qualidade']?['nps'], 'N0'), '</td><td>70</td><td class=\"', if(greater(outputs('Calcular_Metricas_Resumo')?['qualidade']?['nps'], 70), 'positive', 'negative'), '\">', if(greater(outputs('Calcular_Metricas_Resumo')?['qualidade']?['nps'], 70), '✓', '✗'), '</td></tr><tr><td>Rechamadas 7d %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['qualidade']?['rechamadas'], 'N2'), '%</td><td>3.0%</td><td class=\"', if(less(outputs('Calcular_Metricas_Resumo')?['qualidade']?['rechamadas'], 3), 'positive', 'negative'), '\">', if(less(outputs('Calcular_Metricas_Resumo')?['qualidade']?['rechamadas'], 3), '✓', '✗'), '</td></tr><tr><td>Falha Operacional %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['qualidade']?['falha_operacional'], 'N2'), '%</td><td>2.0%</td><td class=\"', if(less(outputs('Calcular_Metricas_Resumo')?['qualidade']?['falha_operacional'], 2), 'positive', 'negative'), '\">', if(less(outputs('Calcular_Metricas_Resumo')?['qualidade']?['falha_operacional'], 2), '✓', '✗'), '</td></tr><tr><td>SLA Atendimento %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['qualidade']?['sla'], 'N1'), '%</td><td>90%</td><td class=\"', if(greater(outputs('Calcular_Metricas_Resumo')?['qualidade']?['sla'], 90), 'positive', 'negative'), '\">', if(greater(outputs('Calcular_Metricas_Resumo')?['qualidade']?['sla'], 90), '✓', '✗'), '</td></tr><tr><td rowspan=\"3\">Produção</td><td>TMA (seg)</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['producao']?['tma'], 'N0'), '</td><td>350</td><td class=\"', if(less(outputs('Calcular_Metricas_Resumo')?['producao']?['tma'], 350), 'positive', 'negative'), '\">', if(less(outputs('Calcular_Metricas_Resumo')?['producao']?['tma'], 350), '✓', '✗'), '</td></tr><tr><td>Ocupação %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['producao']?['ocupacao'], 'N1'), '%</td><td>80%</td><td class=\"', if(greater(outputs('Calcular_Metricas_Resumo')?['producao']?['ocupacao'], 80), 'positive', 'negative'), '\">', if(greater(outputs('Calcular_Metricas_Resumo')?['producao']?['ocupacao'], 80), '✓', '✗'), '</td></tr><tr><td>Absenteísmo %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['producao']?['absenteismo'], 'N1'), '%</td><td>5.0%</td><td class=\"', if(less(outputs('Calcular_Metricas_Resumo')?['producao']?['absenteismo'], 5), 'positive', 'negative'), '\">', if(less(outputs('Calcular_Metricas_Resumo')?['producao']?['absenteismo'], 5), '✓', '✗'), '</td></tr><tr><td rowspan=\"2\">Negócios</td><td>Conversão %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['negocios']?['conversao'], 'N1'), '%</td><td>10%</td><td class=\"', if(greater(outputs('Calcular_Metricas_Resumo')?['negocios']?['conversao'], 10), 'positive', 'negative'), '\">', if(greater(outputs('Calcular_Metricas_Resumo')?['negocios']?['conversao'], 10), '✓', '✗'), '</td></tr><tr><td>Instalações</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['negocios']?['instalacoes'], 'N0'), '</td><td>-</td><td>-</td></tr><tr><td rowspan=\"2\">Financeiro</td><td>Receita Total</td><td>R$ ', formatNumber(outputs('Calcular_Metricas_Resumo')?['financeiro']?['receita'], 'N0'), '</td><td>-</td><td>-</td></tr><tr><td>Margem Operacional %</td><td>', formatNumber(outputs('Calcular_Metricas_Resumo')?['financeiro']?['margem'], 'N1'), '%</td><td>30%</td><td class=\"', if(greater(outputs('Calcular_Metricas_Resumo')?['financeiro']?['margem'], 30), 'positive', 'negative'), '\">', if(greater(outputs('Calcular_Metricas_Resumo')?['financeiro']?['margem'], 30), '✓', '✗'), '</td></tr></table></div><div class=\"section\"><p><a href=\"https://app.powerbi.com/groups/SEU_WORKSPACE/reports/SEU_REPORT_ID\" style=\"background-color:#0078d4;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;display:inline-block;\">Acessar Dashboard Completo</a></p></div><div class=\"section\" style=\"font-size:12px;color:#999;border-top:1px solid #ddd;padding-top:20px;margin-top:40px;\"><p>Este é um e-mail automático gerado pelo Power Automate. Enviado toda segunda-feira às 8h.</p></div></body></html>')"
+      },
+      "description": "Cria HTML formatado para o corpo do e-mail"
+    },
+    {
+      "name": "Enviar_Email",
+      "type": "Office365.SendEmailV2",
+      "inputs": {
+        "to": "diretoria@empresa.com.br; gerentes@empresa.com.br",
+        "cc": "",
+        "subject": "📊 Resumo Semanal - Dashboard Insourcing (Semana @{outputs('Definir_Periodo')?['semana']}/@{outputs('Definir_Periodo')?['ano']})",
+        "body": "@outputs('Criar_HTML_Email')",
+        "importance": "Normal",
+        "attachments": [
+          {
+            "name": "dashboard_snapshot.png",
+            "contentBytes": "@outputs('Exportar_Snapshot_Dashboard')?['body']",
+            "isInline": true,
+            "contentId": "dashboard_snapshot"
+          }
+        ]
+      },
+      "description": "Envia e-mail com resumo e snapshot do dashboard"
+    },
+    {
+      "name": "Registrar_Envio",
+      "type": "SharePoint.CreateItem",
+      "inputs": {
+        "site": "SEU_SITE_SHAREPOINT",
+        "list": "Historico_Envios_Dashboard",
+        "item": {
+          "Title": "Resumo Semanal - Semana @{outputs('Definir_Periodo')?['semana']}",
+          "Data_Envio": "@utcNow()",
+          "Periodo_Inicio": "@outputs('Definir_Periodo')?['data_inicio']",
+          "Periodo_Fim": "@outputs('Definir_Periodo')?['data_fim']",
+          "Status": "Enviado"
+        }
+      },
+      "description": "Registra o envio no SharePoint para auditoria"
+    }
+  ],
+  "configuracao": {
+    "descricao": "CONFIGURAÇÃO NECESSÁRIA",
+    "passos": [
+      "1. Substitua 'SEU_WORKSPACE_ID' pelo ID do seu workspace do Power BI",
+      "2. Substitua 'SEU_REPORT_ID' pelo ID do relatório publicado",
+      "3. Configure os destinatários do e-mail (campo 'to')",
+      "4. Ajuste o fuso horário se necessário (atualmente: E. South America Standard Time = Brasília)",
+      "5. Configure o site SharePoint para registro de histórico (opcional)",
+      "6. Teste o fluxo antes de ativar"
+    ],
+    "frequencia": "Toda segunda-feira às 8h",
+    "destinatarios_padrao": [
+      "diretoria@empresa.com.br",
+      "gerentes@empresa.com.br"
+    ]
+  }
+}

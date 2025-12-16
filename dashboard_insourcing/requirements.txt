@@ -1,0 +1,24 @@
+# Dashboard KPIs Insourcing - Vivo
+# Dependências Python
+
+# Framework Web e Dashboard
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+plotly>=5.18.0
+
+# Manipulação de Dados
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Bancos de Dados (descomentar conforme necessário)
+# Para SQL Server:
+# pyodbc>=5.0.0
+
+# Para Oracle:
+# cx_Oracle>=8.3.0
+
+# Servidor Web (opcional, para produção)
+gunicorn>=21.2.0
+
+# Utilitários
+python-dateutil>=2.8.0
